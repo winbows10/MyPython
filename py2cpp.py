@@ -1,6 +1,33 @@
 import re
 import ast
 
+class PyClass:
+	def __init__(self):
+		self.clsName = ""
+		self.baseClasses = []
+		self.members = {} # {name: type}
+		self.methods = {} # {name: [ret, [argtypes], node]}
+	def getPrototype(self):
+		ret = "class " + self.clsName + "{\n"
+		ret += "public:\n"
+		
+		for i in self.members:
+			ret += "\t" + self.members[i] + " " + i + ";\n"
+		for i in self.methods:
+			ret += "\t" + self.methods[i][0] + " " + i + "("
+			
+			for j in self.methods[i][1]:
+				ret += j + ", "
+			if self.methods[i][1]:
+				ret = ret[:-2]
+			
+			ret += ");\n"
+		
+		ret += "};\n"
+		
+		return ret
+
+
 class Py2Cpp:
 	def __init__(self, node):
 		self.indentLv = 0
@@ -21,6 +48,7 @@ class Py2Cpp:
 		
 		self.forwardDeclarations = {} # {symbol: code}
 		self.prototypes = {} 
+		self.classes = []
 	
 	def getIndentStr(self):
 		ret = ""
@@ -31,8 +59,51 @@ class Py2Cpp:
 	def getCode(self, n):
 		return self.astMethods[type(n)](n)
 	
-	def getFunctions(self):pass
-	def getClasses(self):pass
+	def getFunctions(self):# not for methods, but for global functions.
+		pass
+		
+	def getClasses(self):
+		classes = []
+		for i in self.node.body:
+			if type(i) == ast.ClassDef:
+				obj = PyClass()
+				obj.clsName = i.name
+				
+				if i.bases:
+					raise Exception("Inherit? NoooooooT YeeeeeeeeeeT!!!!!!")
+				
+				for j in i.body:
+					if type(j) == ast.FunctionDef:
+						if j.name == "__init__":
+							# get member variables
+							print("Constructors now cannot have argments.")
+							
+							for k in j.body:
+								if type(k) == ast.Assign and type(k.value) == ast.Call and k.value.func.id == "decl":
+									# That is, a member variable.
+									memberName = k.targets[0].attr
+									memberType = self.getCode(k.value.args[0])
+									memberVal  = ""
+									obj.members[memberName] = memberType
+							
+						else:# get a method
+							retType = self.getCode(j.returns)
+							funcName = j.name
+							argTypes = [self.getCode(x.annotation) for x in j.args.args[1:]]
+							obj.methods[funcName] = [retType, argTypes]
+				classes.append(obj)
+				self.classes = classes
+				
+				# create a forward declaration, a prototype.
+				self.forwardDeclarations[obj.clsName] = "class " + obj.clsName + ";\n"
+				self.prototypes[obj.clsName] = obj.getPrototype()
+				
+				print(self.forwardDeclarations)
+				print(self.prototypes)
+	
+	def getMethodCode(self, n, className):
+		# int MyClass::myMethod(int arg){ ...... }
+		pass
 	
 	#################################################################
 	##
@@ -167,7 +238,10 @@ class Py2Cpp:
 		return "continue;\n"
 	
 	def getNameCode(self, n):
-		return n.id
+		if n.id == "self":
+			return "this"
+		else:
+			return n.id
 	
 	def getStrCode(self, n):
 		return n.s
@@ -266,6 +340,6 @@ class Py2Cpp:
 
 if __name__ == '__main__':
 	# test the class
-	node = ast.parse("del a, h").body[0]
+	node = ast.parse("class A:\n\tdef __init__(self):\n\t\tself.a = decl(int, 85)\n\t\tself.cnt = decl(int)\n\tdef funcy(self, a:int, b: bool)->int:\n\t\treturn 5 * a\n\tdef funcy2(self, a:float)->int:\n\t\treturn 5 * a\n\tdef funcy3(self, a:float)->int:\n\t\treturn 5 * a")
 	obj = Py2Cpp(node)
-	print(obj.getCode(node))
+	obj.getClasses()
